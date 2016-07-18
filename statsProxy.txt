@@ -1,0 +1,290 @@
+uses
+  SysUtils, Classes, TCP;
+  
+var
+  Socket: TTCPBlockSocket;
+  canWrite: boolean;
+  t: integer;
+  s: string;
+  hexUserInfo: string;
+
+function itemCount(ID: integer): integer;
+var
+  tmpItem: TL2Item;
+begin
+  if (Inventory.User.ByID(Id, tmpItem)) then
+    Result := tmpItem.Count
+  else
+    Result := 0;
+end;
+
+procedure sendByte(val: byte);
+begin
+  Socket.SendByte(val);
+end;
+
+procedure sendInt(val: integer);
+begin
+  Socket.SendByte(byte(val shr 24));
+  Socket.SendByte(byte(val shr 16));
+  Socket.SendByte(byte(val shr 8));
+  Socket.SendByte(byte(val));
+end;
+
+procedure sendShort(val: integer);
+begin
+  Socket.SendByte(byte(val shr 8));
+  Socket.SendByte(byte(val));
+end;
+
+procedure sendLong(val: int64);
+begin
+  Socket.SendByte(byte(val shr 56));
+  Socket.SendByte(byte(val shr 48));
+  Socket.SendByte(byte(val shr 40));
+  Socket.SendByte(byte(val shr 32));
+  Socket.SendByte(byte(val shr 24));
+  Socket.SendByte(byte(val shr 16));
+  Socket.SendByte(byte(val shr 8));
+  Socket.SendByte(byte(val));
+end;
+
+procedure sendBool(val: boolean);
+begin
+  if val then
+    Socket.SendByte(1)
+  else
+    Socket.SendByte(0);
+end;
+
+procedure sendString(val: string);
+var
+  i: integer;
+begin
+  if Length(val) > 0 then
+  begin
+    for i:=1 to Length(val) do
+    begin
+      Socket.SendByte(0);
+      Socket.SendByte(byte(val[i]));
+    end;
+  end;
+  Socket.SendByte(0);
+  Socket.SendByte(byte(#0));
+end;
+
+function stringLength(val: string): integer;
+begin
+  Result := (Length(val) + 1) * 2;
+end;
+
+procedure OnPacket(const PacketId, Id2: Cardinal; Data: Pointer; Size: word);
+var
+  hexPacket: string;
+begin
+  if (PacketId = $32) then
+  begin
+    hexUserInfo := memtohex(Data^, Size);
+  end;
+
+  if (PacketId = $00) //Die
+  or (PacketId = $01) //Revive
+  or (PacketId = $08) //DeleteObject
+  or (PacketId = $0C) //NpcInfo
+  or (PacketId = $18) //StatusUpdate
+  or (PacketId = $21) //InventoryUpdate
+  or (PacketId = $23) //TargetSelected
+  or (PacketId = $24) //TargetUnselected
+  or (PacketId = $2f) //CharMoveToLocation
+  or (PacketId = $31) //CharInfo
+  or (PacketId = $32) //UserInfo
+  or (PacketId = $4A) //Say2
+  or (PacketId = $4E) //PartySmallWindowAll
+  or (PacketId = $4F) //PartySmallWindowAdd
+  or (PacketId = $50) //PartySmallWindowDeleteAll
+  or (PacketId = $51) //PartySmallWindowDelete
+  or (PacketId = $52) //PartySmallWindowUpdate
+  or (PacketId = $62) //SystemMessage
+  or (PacketId = $79) //ValidateLocation
+  or (PacketId = $85) //AbnormalStatusUpdate
+  or (PacketId = $F4) //PartySpelled
+  or (PacketId = $F9) //EtcStatusUpdate
+  or (PacketId = $FA) //ShortBuffStatusUpdate
+  or (PacketId = $A1) //PrivateStoreListSell
+  or (PacketId = $BE) //PrivateStoreListBuy
+  then
+  begin
+	if not canWrite then
+		exit;
+
+    hexPacket := memtohex(Data^, Size);
+    sendShort(stringLength(hexPacket) + 1 + 2);
+    sendByte(PacketId);
+    sendString(hexPacket);
+  end;
+  { else
+    print(PacketId);
+
+  {if (PacketId = $79) then
+    print('stop move');}
+
+end;
+
+
+procedure sendToken;
+const
+  token = 'C2238FAE-7EBC-4341-8FAF-3DAB62570171';
+  server = 'ed5f4e9e-993e-40bb-a49b-91fd6f7b204d';
+  version = 1;
+  connectionType = 2;
+var
+  packetSize: integer;
+begin
+  //print('Trying auth');
+  packetSize := 1 + 2 + 4 {version} + 4 {connectionType}
+  + stringLength(hexUserInfo) + stringLength(token) + stringLength(server);
+  sendShort(packetSize);
+  sendByte($FB);
+  sendString(token);
+  sendString(server);
+  sendInt(version);
+  sendInt(connectionType);
+  sendString(hexUserInfo);
+end;
+
+procedure sendUserInventory;
+const
+  packetHeader = 2;
+  packetOpcode = 1;
+var
+  packetSize: SmallInt;
+  i: integer;
+begin
+
+  packetSize := Inventory.User.Count * 13 + 2 + packetHeader + packetOpcode;
+
+  sendShort(packetSize);
+  sendByte($FE);
+
+  sendShort(Inventory.User.Count);
+
+  for i:=0 to Inventory.User.Count-1 do
+  begin
+    sendInt(Inventory.User.Items(i).OID);
+    sendInt(Inventory.User.Items(i).ID);
+    sendInt(Inventory.User.Items(i).Count);
+    sendBool(Inventory.User.Items(i).Equipped);
+  end;
+
+end;
+
+procedure sendStartStatisticsRequest;
+var
+  packetSize: integer;
+begin
+  packetSize := 1 + 2 + 1;
+  sendShort(packetSize);
+  Socket.SendByte($FC);
+  Socket.SendByte(1);
+end;
+
+procedure onFree;
+begin
+  Socket.CloseSocket;
+  Socket.Free;
+end;
+
+function readInteger(timeout: integer = 200): integer;
+var
+  buffer: array[0..3] of byte;
+begin
+  buffer[0] := Socket.RecvByte(timeout);
+  buffer[1] := Socket.RecvByte(timeout);
+  buffer[2] := Socket.RecvByte(timeout);
+  buffer[3] := Socket.RecvByte(timeout);
+
+  Result := (buffer[0] shr 24) or ((buffer[1] and $FF) shr 16) or ((buffer[2] and $FF) shr 8) or ((buffer[3] and $FF));
+end;
+
+function readString(timeout: integer = 200): string;
+var
+  size: byte;
+  i: integer;
+begin
+
+  size := Socket.RecvByte(timeout);
+
+  if (size < 0) then
+  begin
+    Result := '';
+    exit;
+  end;
+
+  SetLength(Result, size + 1);
+  for i:=1 to size do
+  begin
+    Result[i] := Chr(Socket.RecvByte(timeout));
+  end;
+
+  Result[size+1] := Chr(0);
+end;
+
+
+procedure socketListener;
+var
+  opCode: integer;
+  size: integer;
+  text, nick: string;
+  cType: integer;
+  i: integer;
+begin
+  while true do
+  begin
+    delay(50);
+    opCode := Socket.RecvByte(500);
+    if (opCode <> 0) then
+      print(opCode);
+    case opCode of
+      $01:
+         begin
+           i := 1;
+           {while (i < 16) do
+           begin
+            size := Socket.RecvByte(300);
+            print(size);
+            i := i + 1;
+           end; }
+           size := readInteger;
+           cType := Socket.RecvByte(500);
+           text := readString;
+           nick := readString;
+
+           Engine.Say(text, cType, nick);
+
+           //any stuff with reading data
+         end;
+      $13:
+        begin
+          print('Successfully authed.');
+          canWrite := true;
+        end;
+    end;
+
+  end;
+end;
+
+begin
+  canWrite := false;
+  while (hexUserInfo = '') do
+  begin
+    delay(2000);
+    print('Waiting UserInfo');
+  end;
+  Socket := TTCPBlockSocket.Create;
+  Socket.connect('localhost', '7778');  
+  script.newThread(@socketListener);
+  sendToken;
+  delay(3000);
+  canWrite := true;
+  delay(-1);
+end.

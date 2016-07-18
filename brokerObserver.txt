@@ -1,0 +1,137 @@
+uses
+  SysUtils, Classes, TCP;
+  
+var
+  Socket: TTCPBlockSocket;
+  canWrite: boolean;
+  hexUserInfo: string;
+
+procedure sendByte(val: byte);
+begin
+  Socket.SendByte(val);
+end;
+
+procedure sendInt(val: integer);
+begin
+  Socket.SendByte(byte(val shr 24));
+  Socket.SendByte(byte(val shr 16));
+  Socket.SendByte(byte(val shr 8));
+  Socket.SendByte(byte(val));
+end;
+
+procedure sendShort(val: integer);
+begin
+  Socket.SendByte(byte(val shr 8));
+  Socket.SendByte(byte(val));
+end;
+
+procedure sendLong(val: int64);
+begin
+  Socket.SendByte(byte(val shr 56));
+  Socket.SendByte(byte(val shr 48));
+  Socket.SendByte(byte(val shr 40));
+  Socket.SendByte(byte(val shr 32));
+  Socket.SendByte(byte(val shr 24));
+  Socket.SendByte(byte(val shr 16));
+  Socket.SendByte(byte(val shr 8));
+  Socket.SendByte(byte(val));
+end;
+
+procedure sendBool(val: boolean);
+begin
+  if val then
+    Socket.SendByte(1)
+  else
+    Socket.SendByte(0);
+end;
+
+procedure sendString(val: string);
+var
+  i: integer;
+begin
+  if Length(val) > 0 then
+  begin
+    for i:=1 to Length(val) do
+    begin
+      Socket.SendByte(0);
+      Socket.SendByte(byte(val[i]));
+    end;
+  end;
+  Socket.SendByte(0);
+  Socket.SendByte(byte(#0));
+end;
+
+function stringLength(val: string): integer;
+begin
+  Result := (Length(val) + 1) * 2;
+end;
+
+procedure OnPacket(const PacketId, Id2: Cardinal; Data: Pointer; Size: word);
+var
+  hexPacket: string;
+begin
+  if (PacketId = $32) then
+  begin
+    hexUserInfo := memtohex(Data^, Size);
+  end;
+
+  if (PacketId = $08) //DeleteObject
+  or (PacketId = $31) //CharInfo
+  or (PacketId = $32) //UserInfo
+  or (PacketId = $A1) //PrivateStoreListSell
+  or (PacketId = $BE) then //PrivateStoreListBuy
+  begin
+	  if not canWrite then
+		  exit;
+
+    hexPacket := memtohex(Data^, Size);
+    sendShort(stringLength(hexPacket) + 1 + 2);
+    sendByte(PacketId);
+    sendString(hexPacket);
+  end;
+end;
+
+
+procedure sendToken;
+const
+  token = 'C2238FAE-7EBC-4341-8FAF-3DAB62570171';
+  server = 'ed5f4e9e-993e-40bb-a49b-91fd6f7b204d';
+  version = 1;
+  connectionType = 2;
+var
+  packetSize: integer;
+begin
+  packetSize := 1 + 2 + 4 {version} + 4 {connectionType}
+  + stringLength(hexUserInfo) + stringLength(token) + stringLength(server);
+  sendShort(packetSize);
+  sendByte($FB);
+  sendString(token);
+  sendString(server);
+  sendInt(version);
+  sendInt(connectionType);
+  sendString(hexUserInfo);
+end;
+
+procedure onFree;
+begin
+  Socket.CloseSocket;
+  Socket.Free;
+end;
+
+begin
+  canWrite := false;
+  while (hexUserInfo = '') do
+  begin
+    delay(2000);
+    print('Waiting UserInfo. Equip any item or relog to get UserInfo packet.');
+  end;
+  Socket := TTCPBlockSocket.Create;
+  Socket.connect('54.69.134.4', '7778');
+  sendToken;
+  delay(3000);
+  canWrite := true;
+  {
+  insert any script here
+  }
+  delay(-1);
+end.

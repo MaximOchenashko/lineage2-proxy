@@ -1,0 +1,25 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# Home page
+GET         /stream                                         controllers.WebSocketHandlerController.handleWebSocket
+GET         /api/v1/connections                             controllers.RestController.getConnectionsNames
+
+# Broker notifications
+GET         /api/v1/notifications/broker                    controllers.BrokerNotificationsController.list
+#PUT         /api/v1/brokerNotifications/:id/changeState     controllers.BrokerNotificationsController.changeState(id: java.util.UUID, enabled: Boolean)
+POST        /api/v1/notifications/broker                     controllers.BrokerNotificationsController.save
+#DELETE      /api/v1/brokerNotifications/:id                 controllers.BrokerNotificationsController.delete(id: java.util.UUID)
+
+# Angular
+POST        /api/v1/signUp                                  controllers.UserProfileController.signUp
+GET         /api/v1/userDetails                             controllers.UserProfileController.userProfile
+POST        /api/v1/login                                   controllers.UserProfileController.login
+GET         /api/v1/broker/sell                             controllers.BrokerController.listItemsOnSell
+GET         /api/v1/broker/buy                              controllers.BrokerController.listItemsOnBuy
+GET         /api/v1/npcs                                    controllers.NpcObserverController.list
+GET         /api/v1/memoryUsage                             controllers.RestController.memoryUsage
+
+# Map static resources from the /public folder to the /assets URL path
+GET         /public/*file                                   controllers.Assets.versioned(path="/public", file: Asset)
